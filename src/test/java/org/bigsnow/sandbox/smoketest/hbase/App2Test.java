@@ -7,6 +7,8 @@ import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.HTableInterface;
@@ -38,8 +40,12 @@ public class App2Test {
 	public static void setUpBeforeClass() throws Exception {
 		HBaseAdmin admin = new HBaseAdmin(getConfiguration());
 		try {
-			admin.disableTable(tableName);
-			admin.deleteTable(tableName);
+			try {
+				admin.disableTable(tableName);
+				admin.deleteTable(tableName);
+			} catch (TableNotFoundException e) {
+				// Swallow it.
+			}
 			HTableDescriptor tableDescriptor = new HTableDescriptor(tableName);
 			HColumnDescriptor columnDescriptor = new HColumnDescriptor(columnFamilyBytes);
 			tableDescriptor.addFamily(columnDescriptor);
@@ -94,6 +100,38 @@ public class App2Test {
 				assertEquals("resolution value does not match", resolutionValue, resolution);
 			}
 			assertEquals("Incorrect number of results returned", 1, rsCount);
+		} finally {
+			if (rs != null) { rs.close(); }
+			table.close();
+		}
+		assertTrue(true);
+	}
+
+	@Test
+	public void testTwoPutsAndGet() throws IOException {
+		// Values used for test.
+		final String rowKeyValue = "beta";
+		final byte[] rowKeyBytes = Bytes.toBytes(rowKeyValue);
+		final byte[] firstColumnBytes = Bytes.toBytes("first");
+		final String firstValue = "111";
+		final byte[] secondColumnBytes = Bytes.toBytes("second");
+		final String secondValue = "222";
+
+		HTableInterface table = getTable(tableName);
+		ResultScanner rs = null;
+		try {
+			Put p = new Put(rowKeyBytes);
+			p.add(columnFamilyBytes, firstColumnBytes, Bytes.toBytes(firstValue));
+			table.put(p);
+			p = new Put(rowKeyBytes);
+			p.add(columnFamilyBytes, secondColumnBytes, Bytes.toBytes(secondValue));
+			table.put(p);
+			Get g = new Get(rowKeyBytes);
+			Result r = table.get(g);
+			assertNotNull("Result of get is null", r);
+			assertEquals("Row key does not match", rowKeyValue, Bytes.toString(r.getRow()));
+			assertEquals("First value does not match", firstValue, Bytes.toString(r.getValue(columnFamilyBytes, firstColumnBytes)));
+			assertEquals("Second value does not match", secondValue, Bytes.toString(r.getValue(columnFamilyBytes, secondColumnBytes)));
 		} finally {
 			if (rs != null) { rs.close(); }
 			table.close();
